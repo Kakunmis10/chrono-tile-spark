@@ -6,6 +6,7 @@ const BASE_PATTERN_LENGTH = 3;
 const FLASH_DURATION_MS = 520;
 const FLASH_GAP_MS = 180;
 const NEXT_ROUND_DELAY_MS = 900;
+const ROUND_TIME_LIMIT_SECONDS = 30;
 
 type TileFeedback = "idle" | "active" | "correct" | "wrong";
 type GameStatus = "idle" | "showing" | "playing" | "round-complete";
@@ -73,16 +74,38 @@ export function PatternGame() {
   const [streak, setStreak] = useState(0);
   const [round, setRound] = useState(1);
   const [feedbackMap, setFeedbackMap] = useState<Record<number, TileFeedback>>({});
+  const [timeLeft, setTimeLeft] = useState(ROUND_TIME_LIMIT_SECONDS);
+  const [roundTimedOut, setRoundTimedOut] = useState(false);
 
   const timersRef = useRef<number[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const roundTimerRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
 
   const clearTimers = () => {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));
     timersRef.current = [];
   };
 
-  useEffect(() => clearTimers, []);
+  const clearRoundTimer = () => {
+    if (roundTimerRef.current !== null) {
+      window.clearTimeout(roundTimerRef.current);
+      roundTimerRef.current = null;
+    }
+
+    if (countdownIntervalRef.current !== null) {
+      window.clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+  };
+
+  useEffect(
+    () => () => {
+      clearTimers();
+      clearRoundTimer();
+    },
+    [],
+  );
 
   const tiles = useMemo(
     () => Array.from({ length: GRID_SIZE }, (_, index) => index),
@@ -91,9 +114,32 @@ export function PatternGame() {
 
   const resetFeedback = () => setFeedbackMap({});
 
+  const queueNextRound = (hadMistake: boolean) => {
+    clearRoundTimer();
+    setStatus("round-complete");
+    const nextLength = hadMistake ? displayLength : displayLength + 1;
+    const nextRound = hadMistake ? round : round + 1;
+    const nextPattern = createPattern(nextLength);
+
+    const roundTimer = window.setTimeout(() => {
+      setPattern(nextPattern);
+      setDisplayLength(nextLength);
+      setRound(nextRound);
+      setTimeLeft(ROUND_TIME_LIMIT_SECONDS);
+      setRoundTimedOut(false);
+      resetFeedback();
+      showPattern(nextPattern);
+    }, NEXT_ROUND_DELAY_MS);
+
+    timersRef.current.push(roundTimer);
+  };
+
   const showPattern = (nextPattern: number[]) => {
     clearTimers();
+    clearRoundTimer();
     resetFeedback();
+    setRoundTimedOut(false);
+    setTimeLeft(ROUND_TIME_LIMIT_SECONDS);
     setStatus("showing");
     setPlayerStep(0);
     setActiveTile(null);
@@ -119,32 +165,40 @@ export function PatternGame() {
     timersRef.current.push(completeTimer);
   };
 
+  useEffect(() => {
+    clearRoundTimer();
+
+    if (status !== "playing") {
+      return;
+    }
+
+    setTimeLeft(ROUND_TIME_LIMIT_SECONDS);
+    countdownIntervalRef.current = window.setInterval(() => {
+      setTimeLeft((current) => (current > 0 ? current - 1 : 0));
+    }, 1000);
+
+    roundTimerRef.current = window.setTimeout(() => {
+      setRoundTimedOut(true);
+      setStreak(0);
+      setPlayerStep(0);
+      queueNextRound(true);
+    }, ROUND_TIME_LIMIT_SECONDS * 1000);
+
+    return clearRoundTimer;
+  }, [status, displayLength, round]);
+
   const startGame = () => {
     clearTimers();
+    clearRoundTimer();
     const initialPattern = createPattern(BASE_PATTERN_LENGTH);
     setPattern(initialPattern);
     setDisplayLength(BASE_PATTERN_LENGTH);
     setScore(0);
     setRound(1);
     setStreak(0);
+    setTimeLeft(ROUND_TIME_LIMIT_SECONDS);
+    setRoundTimedOut(false);
     showPattern(initialPattern);
-  };
-
-  const queueNextRound = (hadMistake: boolean) => {
-    setStatus("round-complete");
-    const nextLength = hadMistake ? displayLength : displayLength + 1;
-    const nextRound = hadMistake ? round : round + 1;
-    const nextPattern = createPattern(nextLength);
-
-    const roundTimer = window.setTimeout(() => {
-      setPattern(nextPattern);
-      setDisplayLength(nextLength);
-      setRound(nextRound);
-      resetFeedback();
-      showPattern(nextPattern);
-    }, NEXT_ROUND_DELAY_MS);
-
-    timersRef.current.push(roundTimer);
   };
 
   const handleTileClick = (tile: number) => {
@@ -206,8 +260,10 @@ export function PatternGame() {
       : status === "showing"
         ? "Watch the glowing pattern"
         : status === "playing"
-          ? "Repeat the pattern in order"
-          : "Next sequence loading";
+          ? `Repeat the pattern in order · ${timeLeft}s left`
+          : roundTimedOut
+            ? "Time's up · Next sequence loading"
+            : "Next sequence loading";
 
   return (
     <main className="game-shell">
@@ -238,6 +294,10 @@ export function PatternGame() {
               <div className="game-stat">
                 <span className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Streak</span>
                 <strong className="text-3xl font-semibold text-foreground">{streak}</strong>
+              </div>
+              <div className="game-stat sm:col-span-3 lg:col-span-1">
+                <span className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Timer</span>
+                <strong className="text-3xl font-semibold text-foreground">{timeLeft}s</strong>
               </div>
             </div>
 
