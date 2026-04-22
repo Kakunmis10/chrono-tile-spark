@@ -249,9 +249,10 @@
   }
 
   .game-tile {
-    @apply relative aspect-square border border-border bg-card text-sm font-medium text-muted-foreground transition duration-200 ease-out;
+    @apply relative aspect-square border border-border bg-card transition duration-200 ease-out;
     border-radius: var(--radius-lg);
     box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--border) 40%, transparent);
+    min-height: 4.5rem;
   }
 
   .game-tile::after {
