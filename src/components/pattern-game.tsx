@@ -1,0 +1,245 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+
+const GRID_SIZE = 16;
+const GRID_COLUMNS = 4;
+const BASE_PATTERN_LENGTH = 3;
+const FLASH_DURATION_MS = 520;
+const FLASH_GAP_MS = 180;
+const NEXT_ROUND_DELAY_MS = 900;
+
+type TileFeedback = "idle" | "active" | "correct" | "wrong";
+type GameStatus = "idle" | "showing" | "playing" | "round-complete";
+
+function randomTileIndex() {
+  return Math.floor(Math.random() * GRID_SIZE);
+}
+
+function createPattern(length: number) {
+  return Array.from({ length }, () => randomTileIndex());
+}
+
+function tileClassName(feedback: TileFeedback) {
+  if (feedback === "active") return "game-tile game-tile--active";
+  if (feedback === "correct") return "game-tile game-tile--correct";
+  if (feedback === "wrong") return "game-tile game-tile--wrong";
+  return "game-tile";
+}
+
+export function PatternGame() {
+  const [pattern, setPattern] = useState<number[]>([]);
+  const [displayLength, setDisplayLength] = useState(BASE_PATTERN_LENGTH);
+  const [status, setStatus] = useState<GameStatus>("idle");
+  const [activeTile, setActiveTile] = useState<number | null>(null);
+  const [playerStep, setPlayerStep] = useState(0);
+  const [score, setScore] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [round, setRound] = useState(1);
+  const [feedbackMap, setFeedbackMap] = useState<Record<number, TileFeedback>>({});
+
+  const timersRef = useRef<number[]>([]);
+
+  const clearTimers = () => {
+    timersRef.current.forEach((timer) => window.clearTimeout(timer));
+    timersRef.current = [];
+  };
+
+  useEffect(() => clearTimers, []);
+
+  const tiles = useMemo(
+    () => Array.from({ length: GRID_SIZE }, (_, index) => index),
+    [],
+  );
+
+  const resetFeedback = () => setFeedbackMap({});
+
+  const showPattern = (nextPattern: number[]) => {
+    clearTimers();
+    resetFeedback();
+    setStatus("showing");
+    setPlayerStep(0);
+    setActiveTile(null);
+
+    nextPattern.forEach((tile, stepIndex) => {
+      const startAt = stepIndex * (FLASH_DURATION_MS + FLASH_GAP_MS);
+      const activateTimer = window.setTimeout(() => {
+        setActiveTile(tile);
+      }, startAt);
+
+      const deactivateTimer = window.setTimeout(() => {
+        setActiveTile((current) => (current === tile ? null : current));
+      }, startAt + FLASH_DURATION_MS);
+
+      timersRef.current.push(activateTimer, deactivateTimer);
+    });
+
+    const completeTimer = window.setTimeout(() => {
+      setActiveTile(null);
+      setStatus("playing");
+    }, nextPattern.length * (FLASH_DURATION_MS + FLASH_GAP_MS));
+
+    timersRef.current.push(completeTimer);
+  };
+
+  const startGame = () => {
+    clearTimers();
+    const initialPattern = createPattern(BASE_PATTERN_LENGTH);
+    setPattern(initialPattern);
+    setDisplayLength(BASE_PATTERN_LENGTH);
+    setScore(0);
+    setRound(1);
+    setStreak(0);
+    showPattern(initialPattern);
+  };
+
+  const queueNextRound = (hadMistake: boolean) => {
+    setStatus("round-complete");
+    const nextLength = hadMistake ? displayLength : displayLength + 1;
+    const nextRound = hadMistake ? round : round + 1;
+    const nextPattern = createPattern(nextLength);
+
+    const roundTimer = window.setTimeout(() => {
+      setPattern(nextPattern);
+      setDisplayLength(nextLength);
+      setRound(nextRound);
+      resetFeedback();
+      showPattern(nextPattern);
+    }, NEXT_ROUND_DELAY_MS);
+
+    timersRef.current.push(roundTimer);
+  };
+
+  const handleTileClick = (tile: number) => {
+    if (status !== "playing") return;
+
+    const expectedTile = pattern[playerStep];
+    const isCorrect = tile === expectedTile;
+    const isFinalStep = playerStep === pattern.length - 1;
+
+    setFeedbackMap((current) => ({
+      ...current,
+      [tile]: isCorrect ? "correct" : "wrong",
+    }));
+
+    const feedbackTimer = window.setTimeout(() => {
+      setFeedbackMap((current) => {
+        const next = { ...current };
+        delete next[tile];
+        return next;
+      });
+    }, 360);
+    timersRef.current.push(feedbackTimer);
+
+    if (isCorrect) {
+      setScore((current) => current + 10);
+      setStreak((current) => current + 1);
+    } else {
+      setStreak(0);
+    }
+
+    if (isFinalStep) {
+      queueNextRound(!isCorrect);
+      setPlayerStep(0);
+      return;
+    }
+
+    setPlayerStep((current) => current + 1);
+  };
+
+  const statusLabel =
+    status === "idle"
+      ? "Press start to begin"
+      : status === "showing"
+        ? "Watch the glowing pattern"
+        : status === "playing"
+          ? "Repeat the pattern in order"
+          : "Next sequence loading";
+
+  return (
+    <main className="game-shell">
+      <div className="game-frame">
+        <section className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="game-panel flex flex-col justify-between gap-10 p-6 md:p-8">
+            <div className="space-y-4">
+              <p className="text-sm uppercase tracking-[0.3em] text-primary">Pattern Game</p>
+              <div className="space-y-3">
+                <h1 className="max-w-xl text-4xl font-semibold tracking-tight text-foreground md:text-6xl">
+                  Memorize the pulse. Repeat it cleanly.
+                </h1>
+                <p className="max-w-lg text-base leading-7 text-muted-foreground md:text-lg">
+                  A calm dark grid with neon prompts. Match each glowing tile in sequence to build your score.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="game-stat">
+                <span className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Score</span>
+                <strong className="text-3xl font-semibold text-foreground">{score}</strong>
+              </div>
+              <div className="game-stat">
+                <span className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Round</span>
+                <strong className="text-3xl font-semibold text-foreground">{round}</strong>
+              </div>
+              <div className="game-stat">
+                <span className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Streak</span>
+                <strong className="text-3xl font-semibold text-foreground">{streak}</strong>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4">
+              <button type="button" className="game-start-button" onClick={startGame}>
+                {status === "idle" ? "Start" : "Restart"}
+              </button>
+              <p className="text-sm text-muted-foreground">
+                {statusLabel} · +10 for every correct tile, 0 for a wrong pick.
+              </p>
+            </div>
+          </div>
+
+          <div className="game-panel relative p-5 md:p-6">
+            <div className="mb-5 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Grid</p>
+                <p className="mt-1 text-sm text-foreground">
+                  {GRID_COLUMNS} × {GRID_COLUMNS} interactive board
+                </p>
+              </div>
+              <div className="rounded-full border border-border bg-surface-muted px-3 py-1 text-xs tracking-[0.24em] text-primary uppercase">
+                {status === "playing" ? `Step ${playerStep + 1}/${pattern.length}` : statusLabel}
+              </div>
+            </div>
+
+            <div className="relative">
+              <div className="game-grid">
+                {tiles.map((tile) => {
+                  const feedback = activeTile === tile ? "active" : (feedbackMap[tile] ?? "idle");
+
+                  return (
+                    <button
+                      key={tile}
+                      type="button"
+                      className={tileClassName(feedback)}
+                      onClick={() => handleTileClick(tile)}
+                      disabled={status !== "playing"}
+                      aria-label={`Grid tile ${tile + 1}`}
+                    >
+                      {tile + 1}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {status === "idle" && (
+                <div className="game-overlay">
+                  <button type="button" className="game-start-button" onClick={startGame}>
+                    Start
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
