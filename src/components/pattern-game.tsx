@@ -10,6 +10,44 @@ const NEXT_ROUND_DELAY_MS = 900;
 type TileFeedback = "idle" | "active" | "correct" | "wrong";
 type GameStatus = "idle" | "showing" | "playing" | "round-complete";
 
+function createAudioContext() {
+  const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  return AudioContextClass ? new AudioContextClass() : null;
+}
+
+function playTone(
+  audioContext: AudioContext,
+  options: { frequency: number; duration: number; type: OscillatorType; gain: number; slideTo?: number },
+) {
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  const now = audioContext.currentTime;
+
+  oscillator.type = options.type;
+  oscillator.frequency.setValueAtTime(options.frequency, now);
+
+  if (options.slideTo) {
+    oscillator.frequency.exponentialRampToValueAtTime(options.slideTo, now + options.duration);
+  }
+
+  gainNode.gain.setValueAtTime(0.0001, now);
+  gainNode.gain.exponentialRampToValueAtTime(options.gain, now + 0.015);
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, now + options.duration);
+
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(now + options.duration + 0.02);
+}
+
+function playCorrectSound(audioContext: AudioContext) {
+  playTone(audioContext, { frequency: 660, duration: 0.12, type: "sine", gain: 0.05, slideTo: 880 });
+}
+
+function playWrongSound(audioContext: AudioContext) {
+  playTone(audioContext, { frequency: 210, duration: 0.18, type: "sawtooth", gain: 0.035, slideTo: 120 });
+}
+
 function randomTileIndex() {
   return Math.floor(Math.random() * GRID_SIZE);
 }
@@ -37,6 +75,7 @@ export function PatternGame() {
   const [feedbackMap, setFeedbackMap] = useState<Record<number, TileFeedback>>({});
 
   const timersRef = useRef<number[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const clearTimers = () => {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -111,9 +150,25 @@ export function PatternGame() {
   const handleTileClick = (tile: number) => {
     if (status !== "playing") return;
 
+    if (!audioContextRef.current) {
+      audioContextRef.current = createAudioContext();
+    }
+
+    if (audioContextRef.current?.state === "suspended") {
+      void audioContextRef.current.resume();
+    }
+
     const expectedTile = pattern[playerStep];
     const isCorrect = tile === expectedTile;
     const isFinalStep = playerStep === pattern.length - 1;
+
+    if (audioContextRef.current) {
+      if (isCorrect) {
+        playCorrectSound(audioContextRef.current);
+      } else {
+        playWrongSound(audioContextRef.current);
+      }
+    }
 
     setFeedbackMap((current) => ({
       ...current,
@@ -223,7 +278,7 @@ export function PatternGame() {
                       disabled={status !== "playing"}
                       aria-label={`Grid tile ${tile + 1}`}
                     >
-                      {tile + 1}
+                      <span className="sr-only">Tile {tile + 1}</span>
                     </button>
                   );
                 })}
