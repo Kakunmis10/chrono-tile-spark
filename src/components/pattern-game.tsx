@@ -7,6 +7,7 @@ const FLASH_DURATION_MS = 520;
 const FLASH_GAP_MS = 180;
 const NEXT_ROUND_DELAY_MS = 900;
 const ROUND_TIME_LIMIT_SECONDS = 30;
+const MAX_PATTERN_LENGTH = 6;
 
 type TileFeedback = "idle" | "active" | "correct" | "wrong";
 type GameStatus = "idle" | "showing" | "playing" | "round-complete";
@@ -114,10 +115,26 @@ export function PatternGame() {
 
   const resetFeedback = () => setFeedbackMap({});
 
+  const endGame = () => {
+    clearTimers();
+    clearRoundTimer();
+    setPattern([]);
+    setDisplayLength(BASE_PATTERN_LENGTH);
+    setStatus("idle");
+    setActiveTile(null);
+    setPlayerStep(0);
+    setScore(0);
+    setStreak(0);
+    setRound(1);
+    setTimeLeft(ROUND_TIME_LIMIT_SECONDS);
+    setRoundTimedOut(false);
+    resetFeedback();
+  };
+
   const queueNextRound = (hadMistake: boolean) => {
     clearRoundTimer();
     setStatus("round-complete");
-    const nextLength = hadMistake ? displayLength : displayLength + 1;
+    const nextLength = hadMistake ? displayLength : Math.min(displayLength + 1, MAX_PATTERN_LENGTH);
     const nextRound = hadMistake ? round : round + 1;
     const nextPattern = createPattern(nextLength);
 
@@ -188,16 +205,20 @@ export function PatternGame() {
   }, [status, displayLength, round]);
 
   const startGame = () => {
+    const initialPattern = createPattern(BASE_PATTERN_LENGTH);
     clearTimers();
     clearRoundTimer();
-    const initialPattern = createPattern(BASE_PATTERN_LENGTH);
     setPattern(initialPattern);
     setDisplayLength(BASE_PATTERN_LENGTH);
+    setStatus("idle");
+    setActiveTile(null);
+    setPlayerStep(0);
     setScore(0);
     setRound(1);
     setStreak(0);
     setTimeLeft(ROUND_TIME_LIMIT_SECONDS);
     setRoundTimedOut(false);
+    resetFeedback();
     showPattern(initialPattern);
   };
 
@@ -302,9 +323,11 @@ export function PatternGame() {
             </div>
 
             <div className="flex flex-wrap items-center gap-4">
-              <button type="button" className="game-start-button" onClick={startGame}>
-                {status === "idle" ? "Start" : "Restart"}
-              </button>
+              {status !== "idle" && (
+                <button type="button" className="game-start-button" onClick={endGame}>
+                  Restart
+                </button>
+              )}
               <p className="text-sm text-muted-foreground">
                 {statusLabel} · +10 for every correct tile, 0 for a wrong pick.
               </p>
