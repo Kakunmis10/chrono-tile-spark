@@ -1,26 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { PatternGame } from "../components/pattern-game";
+
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Pattern Game | Neon Memory Grid" },
+      {
+        name: "description",
+        content: "A dark neon pattern memory game where players repeat glowing tile sequences and build score.",
+      },
+      { property: "og:title", content: "Pattern Game | Neon Memory Grid" },
+      {
+        property: "og:description",
+        content: "Watch the grid, repeat the pattern, and score points for every correct tile.",
+      },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. For sites with multiple pages (About, Services, Contact, etc.),
-// create separate route files (about.tsx, services.tsx, contact.tsx) — don't put all pages in this file.
-function PlaceholderIndex() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
-}
-
 function Index() {
-  return <PlaceholderIndex />;
+  return <PatternGame />;
 }
